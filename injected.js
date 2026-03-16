@@ -46,7 +46,7 @@
     return new Promise(r => { _pauseResolve = r; });
   }
 
-  function escHtml(ch) {
+  function escapeHtmlChar(ch) {
     if (ch === '&') return '&amp;';
     if (ch === '<') return '&lt;';
     if (ch === '>') return '&gt;';
@@ -134,7 +134,7 @@
     
     if (!success) {
       console.warn('👻 execCommand(insertText) failed for char:', char, '— trying insertHTML fallback');
-      t.doc.execCommand('insertHTML', false, escHtml(char));
+      t.doc.execCommand('insertHTML', false, escapeHtmlChar(char));
     }
 
     return true;
