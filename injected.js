@@ -55,6 +55,10 @@
     return ch;
   }
 
+  function reportTypeFailure() {
+    window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
+  }
+
   // ── Google Docs Interaction ──
   // Strategy: Get the iframe's document, focus the contenteditable,
   // then use execCommand('insertText') which MUST run in main world.
@@ -71,7 +75,9 @@
             iframe = f;
             break;
           }
-        } catch (_) {}
+        } catch (_) {
+          console.debug('👻 Skipping inaccessible iframe while searching for editor target');
+        }
       }
     }
     if (!iframe) {
@@ -249,9 +255,9 @@
       // Typo?
       const doTypo = _cfg.mistakes > 0 && /[a-zA-Z]/.test(c) && Math.random() < _cfg.mistakes / 100;
 
-      if (doTypo) {
+        if (doTypo) {
         if (!typeChar(adjKey(c))) {
-          window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
+          reportTypeFailure();
           _state = 'idle';
           return;
         }
@@ -261,7 +267,7 @@
         const extra = Math.random() < 0.25 ? 1 : 0;
         for (let i = 0; i < extra && _pos + i + 1 < _text.length; i++) {
           if (!typeChar(_text[_pos + i + 1])) {
-            window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
+            reportTypeFailure();
             _state = 'idle';
             return;
           }
@@ -279,7 +285,7 @@
 
       // Type correct char
       if (!typeChar(c)) {
-        window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
+        reportTypeFailure();
         _state = 'idle';
         return;
       }
