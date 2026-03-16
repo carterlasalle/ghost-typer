@@ -107,20 +107,16 @@ document.addEventListener('DOMContentLoaded', () => {
     pctEta.textContent = sec > 60 ? '~' + Math.round(sec / 60) + 'm left' : '~' + sec + 's left';
   }
 
-  // ── Send message ──
+  // ── Send message to background ──
   async function send(msg) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab) { showError('No active tab found.'); return false; }
-    if (!tab.url || !tab.url.includes('docs.google.com/document')) {
-      showError('Open a Google Docs document first, then try again.');
-      setState('idle', 'Idle');
-      return false;
-    }
-
     return new Promise(resolve => {
-      chrome.tabs.sendMessage(tab.id, msg, resp => {
+      chrome.runtime.sendMessage(msg, resp => {
         if (chrome.runtime.lastError) {
-          showError('Cannot reach Google Docs. Reload the doc page, click inside the document, and try again.');
+          showError('Extension error: ' + chrome.runtime.lastError.message);
+          setState('idle', 'Idle');
+          resolve(false);
+        } else if (resp && resp.success === false) {
+          showError(resp.error || 'Unknown error');
           setState('idle', 'Idle');
           resolve(false);
         } else {
