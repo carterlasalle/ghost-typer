@@ -46,14 +46,54 @@
     return new Promise(r => { _pauseResolve = r; });
   }
 
+  function escapeHtmlChar(ch) {
+    if (ch === '&') return '&amp;';
+    if (ch === '<') return '&lt;';
+    if (ch === '>') return '&gt;';
+    if (ch === '"') return '&quot;';
+    if (ch === "'") return '&#39;';
+    return ch;
+  }
+
+  function reportTypeFailure() {
+    window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
+  }
+
+  function getTextRange(el) {
+    const value = typeof el.value === 'string' ? el.value : '';
+    const length = value.length;
+    const start = typeof el.selectionStart === 'number' ? el.selectionStart : length;
+    const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    return { value, start, end };
+  }
+
+  function isTextareaElement(el) {
+    return el?.tagName?.toUpperCase() === 'TEXTAREA';
+  }
+
   // ── Google Docs Interaction ──
   // Strategy: Get the iframe's document, focus the contenteditable,
   // then use execCommand('insertText') which MUST run in main world.
 
   function getIframeTarget() {
-    const iframe = document.querySelector('.docs-texteventtarget-iframe');
+    let iframe = document.querySelector('.docs-texteventtarget-iframe');
+    if (!iframe) iframe = document.querySelector('iframe[class*="docs"]');
     if (!iframe) {
-      console.warn('👻 No .docs-texteventtarget-iframe found');
+      const iframes = document.querySelectorAll('iframe');
+      for (const f of iframes) {
+        try {
+          const fd = f.contentDocument || f.contentWindow?.document;
+          if (fd && fd.querySelector('[contenteditable="true"]')) {
+            iframe = f;
+            break;
+          }
+        } catch (_) {
+          console.debug('👻 Skipping inaccessible iframe while searching for editor target');
+        }
+      }
+    }
+    if (!iframe) {
+      console.warn('👻 No Google Docs text iframe found');
       return null;
     }
     try {
@@ -62,9 +102,9 @@
         console.warn('👻 Cannot access iframe contentDocument');
         return null;
       }
-      const el = doc.querySelector('[contenteditable="true"]');
+      const el = doc.querySelector('textarea.docs-texteventtarget, textarea, [contenteditable="true"]');
       if (!el) {
-        console.warn('👻 No contenteditable element inside iframe');
+        console.warn('👻 No text target element inside iframe');
         return null;
       }
       return { doc, el, win: iframe.contentWindow };
@@ -105,7 +145,9 @@
     if (!t) return false;
 
     // Make sure the editable element has focus
+    t.win?.focus();
     t.el.focus();
+    const isTextarea = isTextareaElement(t.el);
 
     if (char === '\n') {
       // For Enter, we need to simulate the key event
@@ -115,21 +157,39 @@
         bubbles: true, cancelable: true
       };
       t.el.dispatchEvent(new KeyboardEvent('keydown', enterProps));
-      t.doc.execCommand('insertParagraph', false, null);
+      if (!isTextarea) t.doc.execCommand('insertParagraph', false, null);
       t.el.dispatchEvent(new KeyboardEvent('keyup', enterProps));
       return true;
     }
 
     // The magic line: execCommand in MAIN world context
-    const success = t.doc.execCommand('insertText', false, char);
+    let success = t.doc.execCommand('insertText', false, char);
     
     if (!success) {
-      console.warn('👻 execCommand failed for char:', char);
-      
-      // Fallback: try compositionstart → textContent → compositionend
-      t.el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
-      t.el.dispatchEvent(new CompositionEvent('compositionupdate', { data: char, bubbles: true }));
-      t.el.dispatchEvent(new CompositionEvent('compositionend', { data: char, bubbles: true }));
+      console.warn('👻 execCommand(insertText) failed for char:', char, '— trying insertHTML fallback');
+      success = !isTextarea && t.doc.execCommand('insertHTML', false, escapeHtmlChar(char));
+      if (!success && isTextarea) {
+        const { value, start, end } = getTextRange(t.el);
+        if (typeof t.el.setRangeText === 'function') {
+          t.el.setRangeText(char, start, end, 'end');
+        } else {
+          const newPosition = start + char.length;
+          t.el.value = value.slice(0, start) + char + value.slice(end);
+          t.el.selectionStart = newPosition;
+          t.el.selectionEnd = newPosition;
+        }
+        t.el.dispatchEvent(new InputEvent('input', {
+          bubbles: true,
+          cancelable: true,
+          data: char,
+          inputType: 'insertText'
+        }));
+        success = true;
+      }
+      if (!success) {
+        console.error('👻 Both insertText and insertHTML failed for char:', char);
+        return false;
+      }
     }
 
     return true;
@@ -138,14 +198,37 @@
   function doBackspace() {
     const t = getIframeTarget();
     if (!t) return false;
+    t.win?.focus();
     t.el.focus();
+    const isTextarea = isTextareaElement(t.el);
 
     const props = {
       key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8,
       bubbles: true, cancelable: true
     };
     t.el.dispatchEvent(new KeyboardEvent('keydown', props));
-    t.doc.execCommand('delete', false, null);
+    if (!isTextarea) {
+      t.doc.execCommand('delete', false, null);
+    } else {
+      const { value, start, end } = getTextRange(t.el);
+      const deleteStart = start !== end ? start : Math.max(0, start - 1);
+      const deleteEnd = end;
+      if (deleteEnd > deleteStart) {
+        if (typeof t.el.setRangeText === 'function') {
+          t.el.setRangeText('', deleteStart, deleteEnd, 'start');
+        } else {
+          t.el.value = value.slice(0, deleteStart) + value.slice(deleteEnd);
+          t.el.selectionStart = deleteStart;
+          t.el.selectionEnd = deleteStart;
+        }
+      }
+      t.el.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        data: null,
+        inputType: 'deleteContentBackward'
+      }));
+    }
     t.el.dispatchEvent(new KeyboardEvent('keyup', props));
     return true;
   }
@@ -196,18 +279,23 @@
     }
 
     // Step 3: Focus the contenteditable
+    t.win?.focus();
     t.el.focus();
     console.log('👻 Ghost Typer: Editor found, element:', t.el.tagName, 'contentEditable:', t.el.contentEditable);
 
-    // Quick test: try inserting a test character and deleting it
-    const testResult = t.doc.execCommand('insertText', false, '.');
-    console.log('👻 Ghost Typer: execCommand test result:', testResult);
-    if (testResult) {
-      // Delete the test character
-      t.doc.execCommand('delete', false, null);
-      console.log('👻 Ghost Typer: Test passed! execCommand works from main world.');
+    // Quick test: try inserting a test character and deleting it for contenteditable targets
+    if (t.el.tagName !== 'TEXTAREA') {
+      const testResult = t.doc.execCommand('insertText', false, '.');
+      console.log('👻 Ghost Typer: execCommand test result:', testResult);
+      if (testResult) {
+        // Delete the test character
+        t.doc.execCommand('delete', false, null);
+        console.log('👻 Ghost Typer: Test passed! execCommand works from main world.');
+      } else {
+        console.warn('👻 Ghost Typer: execCommand returned false - may not work');
+      }
     } else {
-      console.warn('👻 Ghost Typer: execCommand returned false - may not work');
+      console.log('👻 Ghost Typer: Text target is textarea; using input-event fallback path when needed.');
     }
 
     await sleep(gauss(300, 80));
@@ -224,14 +312,22 @@
       // Typo?
       const doTypo = _cfg.mistakes > 0 && /[a-zA-Z]/.test(c) && Math.random() < _cfg.mistakes / 100;
 
-      if (doTypo) {
-        typeChar(adjKey(c));
+        if (doTypo) {
+        if (!typeChar(adjKey(c))) {
+          reportTypeFailure();
+          _state = 'idle';
+          return;
+        }
         await sleep(Math.max(40, gauss(180, 60)));
         if (_state === 'stopped') break;
 
         const extra = Math.random() < 0.25 ? 1 : 0;
         for (let i = 0; i < extra && _pos + i + 1 < _text.length; i++) {
-          typeChar(_text[_pos + i + 1]);
+          if (!typeChar(_text[_pos + i + 1])) {
+            reportTypeFailure();
+            _state = 'idle';
+            return;
+          }
           await sleep(charDelay());
           if (_state === 'stopped') break;
         }
@@ -245,7 +341,11 @@
       }
 
       // Type correct char
-      typeChar(c);
+      if (!typeChar(c)) {
+        reportTypeFailure();
+        _state = 'idle';
+        return;
+      }
 
       // Delays
       let d = charDelay() + punctDelay(c);

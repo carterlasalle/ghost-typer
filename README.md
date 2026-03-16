@@ -50,7 +50,7 @@ Ghost Typer is an open-source browser extension that takes your pasted text and 
 ### Browser Compatibility Notes
 
 - **Chrome path:** uses the content/injected script bridge by default in this source manifest; debugger-driven typing is only used in builds that include the `debugger` permission.
-- **Firefox 148+ path:** automatically falls back to the content/injected script bridge (`content.js` + `injected.js`) and uses Google Docs-compatible main-world insertion.
+- **Firefox 148+ path:** automatically falls back to the content/injected script bridge (`content.js` + `injected.js`) and uses Google Docs-compatible insertion with `insertText`, `insertHTML`, and textarea `input`-event fallback when Docs exposes a textarea target.
 - **Firefox temporary install note:** manifest includes `background.scripts` fallback for environments where `background.service_worker` is disabled.
 - The extension keeps the same popup controls and saved settings in both browsers.
 - No browser switching is required by users — engine selection is automatic at runtime.
@@ -93,7 +93,7 @@ Ghost Typer is an open-source browser extension that takes your pasted text and 
 Ghost Typer uses three core systems:
 
 ### 1. Google Docs Connector
-Locates the hidden `docs-texteventtarget-iframe` in Google Docs and uses `document.execCommand('insertText')` to inject characters one at a time — the same way real keystrokes are registered.
+Locates the hidden `docs-texteventtarget-iframe` in Google Docs and targets either the Docs textarea event target or a contenteditable element. It uses `document.execCommand('insertText')` first, then `document.execCommand('insertHTML')` for contenteditable fallback, and emits textarea `input` events when Docs exposes a textarea target.
 
 ### 2. Human Typing Simulator
 Uses **Gaussian (normal) distribution** for timing, not uniform randomness. This creates the natural "burst and hesitate" pattern that real humans exhibit while typing.
