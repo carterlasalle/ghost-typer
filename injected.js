@@ -170,6 +170,8 @@
           t.el.setRangeText(char, start, end, 'end');
         } else {
           t.el.value = value.slice(0, start) + char + value.slice(end);
+          t.el.selectionStart = start + char.length;
+          t.el.selectionEnd = start + char.length;
         }
         t.el.dispatchEvent(new InputEvent('input', {
           bubbles: true,
@@ -203,11 +205,21 @@
     if (!isTextarea) {
       t.doc.execCommand('delete', false, null);
     } else {
-      const { start, end } = getTextRange(t.el);
-      if (start !== end) {
-        t.el.setRangeText('', start, end, 'start');
+      const { value, start, end } = getTextRange(t.el);
+      if (typeof t.el.setRangeText === 'function') {
+        if (start !== end) {
+          t.el.setRangeText('', start, end, 'start');
+        } else if (start > 0) {
+          t.el.setRangeText('', start - 1, start, 'start');
+        }
+      } else if (start !== end) {
+        t.el.value = value.slice(0, start) + value.slice(end);
+        t.el.selectionStart = start;
+        t.el.selectionEnd = start;
       } else if (start > 0) {
-        t.el.setRangeText('', start - 1, start, 'start');
+        t.el.value = value.slice(0, start - 1) + value.slice(start);
+        t.el.selectionStart = start - 1;
+        t.el.selectionEnd = start - 1;
       }
       t.el.dispatchEvent(new InputEvent('input', {
         bubbles: true,
