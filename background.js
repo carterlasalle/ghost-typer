@@ -101,13 +101,11 @@ async function pressKey(char) {
   const code = /[a-zA-Z]/.test(char) ? `Key${char.toUpperCase()}` :
                /[0-9]/.test(char) ? `Digit${char}` : '';
 
-  // keyDown
+  // rawKeyDown (does NOT insert text — just the key event)
   await cdp('Input.dispatchKeyEvent', {
-    type: 'keyDown',
+    type: 'rawKeyDown',
     key: char,
     code: code,
-    text: char,
-    unmodifiedText: char,
     windowsVirtualKeyCode: keyCode,
     nativeVirtualKeyCode: keyCode,
   });
