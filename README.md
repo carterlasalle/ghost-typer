@@ -1,8 +1,8 @@
 # 👻 Ghost Typer
 
-**Simulate realistic human typing in Google Docs.**
+**Simulate realistic human typing in Google Docs (Chrome + Firefox 148+).**
 
-Ghost Typer is an open-source Chrome extension that takes your pasted text and types it character-by-character into Google Docs — with natural speed variations, intentional typos and corrections, punctuation pauses, and thinking breaks. The result looks like genuinely hand-typed text in Google Docs' revision history.
+Ghost Typer is an open-source browser extension that takes your pasted text and types it character-by-character into Google Docs — with natural speed variations, intentional typos and corrections, punctuation pauses, and thinking breaks. The result looks like genuinely hand-typed text in Google Docs' revision history.
 
 ![Ghost Typer Screenshot](https://raw.githubusercontent.com/user/ghost-typer/main/screenshots/popup.png)
 
@@ -33,16 +33,26 @@ Ghost Typer is an open-source Chrome extension that takes your pasted text and t
    git clone https://github.com/user/ghost-typer.git
    ```
 
-2. Open **Chrome** and navigate to:
-   ```
-   chrome://extensions
-   ```
+2. Load the extension in your target browser:
 
-3. Enable **Developer mode** (toggle in the top-right corner)
+   **Chrome**
+   1. Open `chrome://extensions`
+   2. Enable **Developer mode** (top-right toggle)
+   3. Click **Load unpacked** and select the `ghost-typer` folder
 
-4. Click **"Load unpacked"** and select the `ghost-typer` folder
+   **Firefox 148+**
+   1. Open `about:debugging#/runtime/this-firefox`
+   2. Click **Load Temporary Add-on...**
+   3. Select the `manifest.json` file in your local `ghost-typer` folder
 
-5. The Ghost Typer icon 👻 should appear in your extensions bar
+3. The Ghost Typer icon 👻 should appear in your browser toolbar
+
+### Browser Compatibility Notes
+
+- **Chrome path:** uses the debugger-driven typing engine for high-fidelity key dispatch.
+- **Firefox 148+ path:** automatically falls back to the content/injected script bridge (`content.js` + `injected.js`) and uses Google Docs-compatible main-world insertion.
+- The extension keeps the same popup controls and saved settings in both browsers.
+- No browser switching is required by users — engine selection is automatic at runtime.
 
 ---
 

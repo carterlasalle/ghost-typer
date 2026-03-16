@@ -62,6 +62,10 @@ let state = 'idle';
 let tabId = null;
 let debuggerAttached = false;
 let pauseResolve = null;
+let progressCurrent = 0;
+let progressTotal = 0;
+
+const hasDebuggerApi = !!(chrome.debugger && chrome.debugger.attach && chrome.debugger.sendCommand);
 
 // ── Utilities ──
 function gauss(m, s) {
@@ -113,6 +117,7 @@ async function attachDebugger(tid) {
 }
 
 async function detachDebugger() {
+  if (!hasDebuggerApi) return;
   if (!debuggerAttached) return;
   return new Promise((resolve) => {
     chrome.debugger.detach({ tabId }, () => {
@@ -120,6 +125,31 @@ async function detachDebugger() {
       resolve();
     });
   });
+}
+
+function sendTabMessage(tid, msg) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tid, msg, (resp) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(resp);
+      }
+    });
+  });
+}
+
+async function startTypingFallback(tid, cfg) {
+  tabId = tid;
+  state = 'typing';
+  progressCurrent = 0;
+  progressTotal = cfg.text.length;
+  try {
+    await sendTabMessage(tid, { action: 'START_TYPING', config: cfg });
+  } catch (e) {
+    state = 'idle';
+    broadcast({ action: 'TYPING_ERROR', error: 'Could not start typing in this browser: ' + e.message });
+  }
 }
 
 // ── Overlay — blocks mouse AND keyboard from user ──
@@ -271,6 +301,8 @@ function parseMarkdown(text) {
 // MAIN TYPING ENGINE
 // ==========================================
 async function startTyping(tid, cfg) {
+  progressCurrent = 0;
+  progressTotal = cfg.text.length;
   state = 'typing';
 
   try {
@@ -444,11 +476,17 @@ async function startTyping(tid, cfg) {
 
     if (state !== 'stopped') {
       broadcast({ action: 'TYPING_COMPLETE', total: totalChars });
+      progressCurrent = totalChars;
+      progressTotal = totalChars;
+      state = 'done';
     }
   } catch (e) {
     broadcast({ action: 'TYPING_ERROR', error: e.message });
+    state = 'error';
   } finally {
-    state = 'idle';
+    if (state !== 'done' && state !== 'error') {
+      state = 'idle';
+    }
     await removeOverlay();
     await detachDebugger();
   }
@@ -471,9 +509,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         if (state === 'typing') {
           state = 'stopped';
-          setTimeout(() => startTyping(tabs[0].id, cfg), 300);
+          setTimeout(() => {
+            if (hasDebuggerApi) {
+              startTyping(tabs[0].id, cfg);
+            } else {
+              startTypingFallback(tabs[0].id, cfg);
+            }
+          }, 300);
         } else {
-          startTyping(tabs[0].id, cfg);
+          if (hasDebuggerApi) {
+            startTyping(tabs[0].id, cfg);
+          } else {
+            startTypingFallback(tabs[0].id, cfg);
+          }
         }
         sendResponse({ success: true });
       });
@@ -482,34 +530,73 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'PAUSE_TYPING':
       state = 'paused';
+      if (!hasDebuggerApi && tabId !== null) {
+        sendTabMessage(tabId, { action: 'PAUSE_TYPING' }).catch(() => {});
+      }
       sendResponse({ success: true });
       break;
 
     case 'RESUME_TYPING':
       state = 'typing';
       if (pauseResolve) { pauseResolve(); pauseResolve = null; }
+      if (!hasDebuggerApi && tabId !== null) {
+        sendTabMessage(tabId, { action: 'RESUME_TYPING' }).catch(() => {});
+      }
       sendResponse({ success: true });
       break;
 
     case 'STOP_TYPING':
       state = 'stopped';
       if (pauseResolve) { pauseResolve(); pauseResolve = null; }
-      removeOverlay();
-      detachDebugger();
+      if (hasDebuggerApi) {
+        removeOverlay();
+        detachDebugger();
+      } else if (tabId !== null) {
+        sendTabMessage(tabId, { action: 'STOP_TYPING' }).catch(() => {});
+      }
+      progressCurrent = 0;
+      progressTotal = 0;
+      state = 'idle';
       sendResponse({ success: true });
       break;
 
     case 'GET_STATE':
-      sendResponse({ state });
+      sendResponse({ state, current: progressCurrent, total: progressTotal });
+      break;
+
+    case 'PROGRESS_UPDATE':
+      if (sender?.tab && (state === 'typing' || state === 'paused' || state === 'done')) {
+        progressCurrent = msg.current || 0;
+        progressTotal = msg.total || progressTotal;
+      }
+      sendResponse({ success: true });
+      break;
+
+    case 'TYPING_COMPLETE':
+      if (sender?.tab) {
+        progressCurrent = msg.total || progressCurrent;
+        progressTotal = msg.total || progressTotal;
+        state = 'done';
+      }
+      sendResponse({ success: true });
+      break;
+
+    case 'TYPING_ERROR':
+      if (sender?.tab) {
+        state = 'error';
+      }
+      sendResponse({ success: true });
       break;
   }
   return true;
 });
 
-chrome.debugger.onDetach.addListener(() => {
-  debuggerAttached = false;
-  if (state === 'typing' || state === 'paused') {
-    state = 'stopped';
-    broadcast({ action: 'TYPING_ERROR', error: 'Debugger detached.' });
-  }
-});
+if (hasDebuggerApi && chrome.debugger.onDetach) {
+  chrome.debugger.onDetach.addListener(() => {
+    debuggerAttached = false;
+    if (state === 'typing' || state === 'paused') {
+      state = 'stopped';
+      broadcast({ action: 'TYPING_ERROR', error: 'Debugger detached.' });
+    }
+  });
+}
