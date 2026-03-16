@@ -67,6 +67,10 @@
     return { value, start, end };
   }
 
+  function isTextareaElement(el) {
+    return el?.tagName?.toUpperCase() === 'TEXTAREA';
+  }
+
   // ── Google Docs Interaction ──
   // Strategy: Get the iframe's document, focus the contenteditable,
   // then use execCommand('insertText') which MUST run in main world.
@@ -143,7 +147,7 @@
     // Make sure the editable element has focus
     t.win?.focus();
     t.el.focus();
-    const isTextarea = t.el.tagName === 'TEXTAREA';
+    const isTextarea = isTextareaElement(t.el);
 
     if (char === '\n') {
       // For Enter, we need to simulate the key event
@@ -169,9 +173,10 @@
         if (typeof t.el.setRangeText === 'function') {
           t.el.setRangeText(char, start, end, 'end');
         } else {
+          const newPosition = start + char.length;
           t.el.value = value.slice(0, start) + char + value.slice(end);
-          t.el.selectionStart = start + char.length;
-          t.el.selectionEnd = start + char.length;
+          t.el.selectionStart = newPosition;
+          t.el.selectionEnd = newPosition;
         }
         t.el.dispatchEvent(new InputEvent('input', {
           bubbles: true,
@@ -195,7 +200,7 @@
     if (!t) return false;
     t.win?.focus();
     t.el.focus();
-    const isTextarea = t.el.tagName === 'TEXTAREA';
+    const isTextarea = isTextareaElement(t.el);
 
     const props = {
       key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8,
@@ -206,20 +211,16 @@
       t.doc.execCommand('delete', false, null);
     } else {
       const { value, start, end } = getTextRange(t.el);
-      if (typeof t.el.setRangeText === 'function') {
-        if (start !== end) {
-          t.el.setRangeText('', start, end, 'start');
-        } else if (start > 0) {
-          t.el.setRangeText('', start - 1, start, 'start');
+      const deleteStart = start !== end ? start : Math.max(0, start - 1);
+      const deleteEnd = end;
+      if (deleteEnd > deleteStart) {
+        if (typeof t.el.setRangeText === 'function') {
+          t.el.setRangeText('', deleteStart, deleteEnd, 'start');
+        } else {
+          t.el.value = value.slice(0, deleteStart) + value.slice(deleteEnd);
+          t.el.selectionStart = deleteStart;
+          t.el.selectionEnd = deleteStart;
         }
-      } else if (start !== end) {
-        t.el.value = value.slice(0, start) + value.slice(end);
-        t.el.selectionStart = start;
-        t.el.selectionEnd = start;
-      } else if (start > 0) {
-        t.el.value = value.slice(0, start - 1) + value.slice(start);
-        t.el.selectionStart = start - 1;
-        t.el.selectionEnd = start - 1;
       }
       t.el.dispatchEvent(new InputEvent('input', {
         bubbles: true,
