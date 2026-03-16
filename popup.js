@@ -1,293 +1,166 @@
-/* ========================================
-   Ghost Typer — Popup Controller
-   ======================================== */
-
+/* Ghost Typer — Popup Controller */
 document.addEventListener('DOMContentLoaded', () => {
-  // ── DOM Elements ──
-  const textInput = document.getElementById('textInput');
-  const charCount = document.getElementById('charCount');
-  const wordCount = document.getElementById('wordCount');
+  // DOM
+  const $ = id => document.getElementById(id);
+  const text     = $('textInput');
+  const chars    = $('charCount');
+  const words    = $('wordCount');
+  const speed    = $('speed');
+  const variation= $('variation');
+  const mistakes = $('mistakes');
+  const punct    = $('punct');
+  const para     = $('para');
+  const thinking = $('thinking');
+  const startBtn = $('startBtn');
+  const pauseBtn = $('pauseBtn');
+  const stopBtn  = $('stopBtn');
+  const badge    = $('statusBadge');
+  const badgeT   = $('statusText');
+  const progCard = $('progressCard');
+  const barFill  = $('barFill');
+  const pctText  = $('pctText');
+  const pctChars = $('pctChars');
+  const pctEta   = $('pctEta');
+  const errBanner= $('errorBanner');
+  const errText  = $('errorText');
+  const errClose = $('errorClose');
 
-  const speedSlider = document.getElementById('speedSlider');
-  const speedValue = document.getElementById('speedValue');
-  const variationSlider = document.getElementById('variationSlider');
-  const variationValue = document.getElementById('variationValue');
-  const mistakeSlider = document.getElementById('mistakeSlider');
-  const mistakeValue = document.getElementById('mistakeValue');
-  const punctSlider = document.getElementById('punctSlider');
-  const punctValue = document.getElementById('punctValue');
-  const paraSlider = document.getElementById('paraSlider');
-  const paraValue = document.getElementById('paraValue');
-  const thinkToggle = document.getElementById('thinkToggle');
-  const thinkValue = document.getElementById('thinkValue');
+  let state = 'idle';
 
-  const startBtn = document.getElementById('startBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
-  const stopBtn = document.getElementById('stopBtn');
+  // ── Error handling ──
+  function showError(msg) {
+    errText.textContent = msg;
+    errBanner.style.display = 'flex';
+  }
+  errClose.onclick = () => { errBanner.style.display = 'none'; };
 
-  const statusBadge = document.getElementById('statusBadge');
-  const progressSection = document.getElementById('progressSection');
-  const progressFill = document.getElementById('progressFill');
-  const progressPercent = document.getElementById('progressPercent');
-  const progressChars = document.getElementById('progressChars');
-  const progressEta = document.getElementById('progressEta');
-
-  let currentState = 'idle'; // idle | typing | paused | done | error
-
-  // ── Load Saved Settings ──
-  chrome.storage.local.get([
-    'text', 'speed', 'variation', 'mistakes', 'punctDelay',
-    'paraDelay', 'thinkingPauses'
-  ], (data) => {
-    if (data.text) textInput.value = data.text;
-    if (data.speed !== undefined) speedSlider.value = data.speed;
-    if (data.variation !== undefined) variationSlider.value = data.variation;
-    if (data.mistakes !== undefined) mistakeSlider.value = data.mistakes;
-    if (data.punctDelay !== undefined) punctSlider.value = data.punctDelay;
-    if (data.paraDelay !== undefined) paraSlider.value = data.paraDelay;
-    if (data.thinkingPauses !== undefined) thinkToggle.checked = data.thinkingPauses;
-    updateAllDisplays();
+  // ── Load settings ──
+  chrome.storage.local.get(['text','speed','variation','mistakes','punctDelay','paraDelay','thinkingPauses'], d => {
+    if (d.text) text.value = d.text;
+    if (d.speed !== undefined) speed.value = d.speed;
+    if (d.variation !== undefined) variation.value = d.variation;
+    if (d.mistakes !== undefined) mistakes.value = d.mistakes;
+    if (d.punctDelay !== undefined) punct.value = d.punctDelay;
+    if (d.paraDelay !== undefined) para.value = d.paraDelay;
+    if (d.thinkingPauses !== undefined) thinking.checked = d.thinkingPauses;
+    refreshUI();
   });
 
-  // ── Text Counter ──
-  textInput.addEventListener('input', () => {
-    const text = textInput.value;
-    charCount.textContent = text.length;
-    wordCount.textContent = text.trim() ? text.trim().split(/\s+/).length : 0;
-    chrome.storage.local.set({ text });
-  });
-
-  // ── Slider Updates ──
-  function updateAllDisplays() {
-    const text = textInput.value;
-    charCount.textContent = text.length;
-    wordCount.textContent = text.trim() ? text.trim().split(/\s+/).length : 0;
-    speedValue.textContent = `${speedSlider.value} WPM`;
-    variationValue.textContent = `${variationSlider.value}%`;
-    mistakeValue.textContent = `${mistakeSlider.value}%`;
-    punctValue.textContent = `${punctSlider.value}ms`;
-    paraValue.textContent = `${(paraSlider.value / 1000).toFixed(1)}s`;
-    thinkValue.textContent = thinkToggle.checked ? 'On' : 'Off';
+  // ── UI refresh ──
+  function refreshUI() {
+    chars.textContent = text.value.length;
+    words.textContent = text.value.trim() ? text.value.trim().split(/\s+/).length : 0;
+    $('speedVal').textContent   = speed.value + ' WPM';
+    $('varVal').textContent     = variation.value + '%';
+    $('mistakeVal').textContent = mistakes.value + '%';
+    $('punctVal').textContent   = punct.value + ' ms';
+    $('paraVal').textContent    = (para.value / 1000).toFixed(1) + ' s';
   }
 
-  speedSlider.addEventListener('input', () => {
-    speedValue.textContent = `${speedSlider.value} WPM`;
-    saveSettings();
-  });
+  text.oninput = () => { refreshUI(); chrome.storage.local.set({ text: text.value }); };
 
-  variationSlider.addEventListener('input', () => {
-    variationValue.textContent = `${variationSlider.value}%`;
-    saveSettings();
-  });
-
-  mistakeSlider.addEventListener('input', () => {
-    mistakeValue.textContent = `${mistakeSlider.value}%`;
-    saveSettings();
-  });
-
-  punctSlider.addEventListener('input', () => {
-    punctValue.textContent = `${punctSlider.value}ms`;
-    saveSettings();
-  });
-
-  paraSlider.addEventListener('input', () => {
-    paraValue.textContent = `${(paraSlider.value / 1000).toFixed(1)}s`;
-    saveSettings();
-  });
-
-  thinkToggle.addEventListener('change', () => {
-    thinkValue.textContent = thinkToggle.checked ? 'On' : 'Off';
-    saveSettings();
-  });
-
-  function saveSettings() {
+  function save() {
     chrome.storage.local.set({
-      speed: parseInt(speedSlider.value),
-      variation: parseInt(variationSlider.value),
-      mistakes: parseInt(mistakeSlider.value),
-      punctDelay: parseInt(punctSlider.value),
-      paraDelay: parseInt(paraSlider.value),
-      thinkingPauses: thinkToggle.checked,
+      speed: +speed.value, variation: +variation.value, mistakes: +mistakes.value,
+      punctDelay: +punct.value, paraDelay: +para.value, thinkingPauses: thinking.checked,
     });
   }
 
-  function getConfig() {
+  [speed, variation, mistakes, punct, para].forEach(s => {
+    s.oninput = () => { refreshUI(); save(); };
+  });
+  thinking.onchange = save;
+
+  function cfg() {
     return {
-      text: textInput.value,
-      speed: parseInt(speedSlider.value),
-      variation: parseInt(variationSlider.value),
-      mistakes: parseInt(mistakeSlider.value),
-      punctDelay: parseInt(punctSlider.value),
-      paraDelay: parseInt(paraSlider.value),
-      thinkingPauses: thinkToggle.checked,
+      text: text.value, speed: +speed.value, variation: +variation.value,
+      mistakes: +mistakes.value, punctDelay: +punct.value,
+      paraDelay: +para.value, thinkingPauses: thinking.checked,
     };
   }
 
-  // ── State & UI Management ──
-  function setState(state, statusText) {
-    currentState = state;
-    const badge = statusBadge;
-    const dot = badge.querySelector('.status-dot');
-    const text = badge.querySelector('.status-text');
+  // ── State ──
+  function setState(s, label) {
+    state = s;
+    badge.dataset.status = s;
+    badgeT.textContent = label || s[0].toUpperCase() + s.slice(1);
 
-    badge.setAttribute('data-status', state);
-    text.textContent = statusText || state.charAt(0).toUpperCase() + state.slice(1);
+    startBtn.disabled = s === 'typing';
+    pauseBtn.disabled = s !== 'typing' && s !== 'paused';
+    stopBtn.disabled  = s === 'idle' || s === 'done';
 
-    startBtn.disabled = state === 'typing';
-    pauseBtn.disabled = state !== 'typing' && state !== 'paused';
-    stopBtn.disabled = state === 'idle' || state === 'done';
+    progCard.style.display = (s === 'typing' || s === 'paused' || s === 'done') ? 'block' : 'none';
+    if (s === 'idle') { barFill.style.width = '0%'; pctText.textContent = '0%'; }
 
-    if (state === 'typing' || state === 'paused') {
-      progressSection.style.display = 'block';
-    }
-
-    if (state === 'idle') {
-      progressSection.style.display = 'none';
-      progressFill.style.width = '0%';
-      progressPercent.textContent = '0%';
-    }
-
-    // Update pause button text
-    if (state === 'paused') {
-      pauseBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Resume
-      `;
-    } else {
-      pauseBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-        Pause
-      `;
-    }
-
-    // Update start button when done
-    if (state === 'done') {
-      startBtn.disabled = false;
-      startBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Start Again
-      `;
-    } else if (state === 'idle') {
-      startBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Start Typing
-      `;
-    }
+    pauseBtn.textContent = s === 'paused' ? '▶ Resume' : '⏸ Pause';
+    startBtn.textContent = s === 'done' ? '▶ Restart' : '▶ Start';
+    if (s === 'done') startBtn.disabled = false;
   }
 
-  function updateProgress(current, total) {
-    const percent = Math.round((current / total) * 100);
-    progressFill.style.width = `${percent}%`;
-    progressPercent.textContent = `${percent}%`;
-    progressChars.textContent = `${current} / ${total} chars`;
-
-    const config = getConfig();
-    const avgMsPerChar = (60 * 1000) / (config.speed * 5);
-    const remaining = total - current;
-    const etaSeconds = Math.round((remaining * avgMsPerChar) / 1000);
-    if (etaSeconds > 60) {
-      progressEta.textContent = `~${Math.round(etaSeconds / 60)}m remaining`;
-    } else {
-      progressEta.textContent = `~${etaSeconds}s remaining`;
-    }
+  function setProgress(cur, total) {
+    const pct = Math.round(cur / total * 100);
+    barFill.style.width = pct + '%';
+    pctText.textContent = pct + '%';
+    pctChars.textContent = cur + ' / ' + total;
+    const ms = 60000 / (cfg().speed * 5);
+    const sec = Math.round((total - cur) * ms / 1000);
+    pctEta.textContent = sec > 60 ? '~' + Math.round(sec / 60) + 'm left' : '~' + sec + 's left';
   }
 
-  // ── Communication with Content Script ──
-  async function sendToContentScript(message) {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab) {
-        setState('error', 'No tab');
-        return;
-      }
+  // ── Send message ──
+  async function send(msg) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) { showError('No active tab found.'); return false; }
+    if (!tab.url || !tab.url.includes('docs.google.com/document')) {
+      showError('Open a Google Docs document first, then try again.');
+      setState('idle', 'Idle');
+      return false;
+    }
 
-      if (!tab.url || !tab.url.includes('docs.google.com/document')) {
-        setState('error', 'Not Google Docs');
-        return;
-      }
-
-      chrome.tabs.sendMessage(tab.id, message, (response) => {
+    return new Promise(resolve => {
+      chrome.tabs.sendMessage(tab.id, msg, resp => {
         if (chrome.runtime.lastError) {
-          console.error('Message error:', chrome.runtime.lastError.message);
-          setState('error', 'Connection Error');
+          showError('Cannot reach Google Docs. Reload the doc page, click inside the document, and try again.');
+          setState('idle', 'Idle');
+          resolve(false);
+        } else {
+          errBanner.style.display = 'none';
+          resolve(true);
         }
       });
-    } catch (err) {
-      console.error('Failed to send message:', err);
-      setState('error', 'Error');
-    }
+    });
   }
 
-  // ── Button Handlers ──
-  startBtn.addEventListener('click', () => {
-    const config = getConfig();
-    if (!config.text.trim()) {
-      textInput.focus();
-      textInput.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-      setTimeout(() => {
-        textInput.style.borderColor = '';
-      }, 1500);
-      return;
-    }
+  // ── Buttons ──
+  startBtn.onclick = async () => {
+    const c = cfg();
+    if (!c.text.trim()) { text.focus(); text.style.borderColor = '#ff3b30'; setTimeout(() => text.style.borderColor = '', 1200); return; }
+    setState('typing', 'Typing…');
+    setProgress(0, c.text.length);
+    await send({ action: 'START_TYPING', config: c });
+  };
 
-    setState('typing', 'Typing...');
-    updateProgress(0, config.text.length);
+  pauseBtn.onclick = async () => {
+    if (state === 'typing')  { setState('paused', 'Paused'); await send({ action: 'PAUSE_TYPING' }); }
+    else if (state === 'paused') { setState('typing', 'Typing…'); await send({ action: 'RESUME_TYPING' }); }
+  };
 
-    sendToContentScript({
-      action: 'START_TYPING',
-      config
-    });
-  });
-
-  pauseBtn.addEventListener('click', () => {
-    if (currentState === 'typing') {
-      setState('paused', 'Paused');
-      sendToContentScript({ action: 'PAUSE_TYPING' });
-    } else if (currentState === 'paused') {
-      setState('typing', 'Typing...');
-      sendToContentScript({ action: 'RESUME_TYPING' });
-    }
-  });
-
-  stopBtn.addEventListener('click', () => {
+  stopBtn.onclick = async () => {
     setState('idle', 'Idle');
-    sendToContentScript({ action: 'STOP_TYPING' });
+    await send({ action: 'STOP_TYPING' });
+  };
+
+  // ── Incoming messages ──
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'PROGRESS_UPDATE') setProgress(msg.current, msg.total);
+    if (msg.action === 'TYPING_COMPLETE') { setState('done', 'Done ✓'); setProgress(msg.total, msg.total); }
+    if (msg.action === 'TYPING_ERROR')    { setState('error', 'Error'); showError(msg.error); }
   });
 
-  // ── Listen for Progress Updates ──
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    switch (message.action) {
-      case 'PROGRESS_UPDATE':
-        updateProgress(message.current, message.total);
-        break;
-
-      case 'TYPING_COMPLETE':
-        setState('done', 'Complete ✓');
-        updateProgress(message.total, message.total);
-        break;
-
-      case 'TYPING_ERROR':
-        setState('error', 'Error');
-        console.error('Typing error:', message.error);
-        break;
-    }
-  });
-
-  // ── Check current state on popup open ──
-  chrome.runtime.sendMessage({ action: 'GET_STATE' }, (response) => {
-    if (chrome.runtime.lastError) return;
-    if (response && response.state) {
-      if (response.state === 'typing') {
-        setState('typing', 'Typing...');
-        if (response.current && response.total) {
-          updateProgress(response.current, response.total);
-        }
-      } else if (response.state === 'paused') {
-        setState('paused', 'Paused');
-        if (response.current && response.total) {
-          updateProgress(response.current, response.total);
-        }
-      }
-    }
+  // ── Restore state ──
+  chrome.runtime.sendMessage({ action: 'GET_STATE' }, r => {
+    if (chrome.runtime.lastError || !r) return;
+    if (r.state === 'typing') { setState('typing', 'Typing…'); setProgress(r.current, r.total); }
+    if (r.state === 'paused') { setState('paused', 'Paused');   setProgress(r.current, r.total); }
   });
 });
