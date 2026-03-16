@@ -71,11 +71,25 @@
     return el?.tagName?.toUpperCase() === 'TEXTAREA';
   }
 
+  function isCanvasDocsLayout() {
+    return !!document.querySelector('.kix-canvas-tile-content, canvas.kix-canvas-tile-content, .kix-canvas-tile-content canvas');
+  }
+
+  function findTargetInDoc(doc, win) {
+    if (!doc) return null;
+    const editorRoot = doc.querySelector('.kix-appview-editor') || doc;
+    const textarea = editorRoot.querySelector('textarea.docs-texteventtarget, textarea');
+    if (textarea) return { doc, el: textarea, win };
+    const editable = editorRoot.querySelector('[contenteditable="true"]');
+    if (editable) return { doc, el: editable, win };
+    return null;
+  }
+
   // ── Google Docs Interaction ──
   // Strategy: Get the iframe's document, focus the contenteditable,
   // then use execCommand('insertText') which MUST run in main world.
 
-  function getIframeTarget() {
+  function getEditorTarget() {
     let iframe = document.querySelector('.docs-texteventtarget-iframe');
     if (!iframe) iframe = document.querySelector('iframe[class*="docs"]');
     if (!iframe) {
@@ -92,26 +106,26 @@
         }
       }
     }
-    if (!iframe) {
-      console.warn('👻 No Google Docs text iframe found');
-      return null;
-    }
-    try {
-      const doc = iframe.contentDocument || iframe.contentWindow.document;
-      if (!doc) {
-        console.warn('👻 Cannot access iframe contentDocument');
-        return null;
+    if (iframe) {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        if (!doc) {
+          console.warn('👻 Cannot access iframe contentDocument');
+        } else {
+          const target = findTargetInDoc(doc, iframe.contentWindow);
+          if (target) return target;
+          console.warn('👻 No text target element inside iframe');
+        }
+      } catch (e) {
+        console.warn('👻 Iframe access error:', e.message);
       }
-      const el = doc.querySelector('textarea.docs-texteventtarget, textarea, [contenteditable="true"]');
-      if (!el) {
-        console.warn('👻 No text target element inside iframe');
-        return null;
-      }
-      return { doc, el, win: iframe.contentWindow };
-    } catch (e) {
-      console.warn('👻 Iframe access error:', e.message);
-      return null;
     }
+
+    const directTarget = findTargetInDoc(document, window);
+    if (directTarget) return directTarget;
+
+    console.warn('👻 No Google Docs text input target found in iframe or document');
+    return null;
   }
 
   function focusEditor() {
@@ -141,7 +155,7 @@
    * not in Chrome's extension isolated world.
    */
   function typeChar(char) {
-    const t = getIframeTarget();
+    const t = getEditorTarget();
     if (!t) return false;
 
     // Make sure the editable element has focus
@@ -196,7 +210,7 @@
   }
 
   function doBackspace() {
-    const t = getIframeTarget();
+    const t = getEditorTarget();
     if (!t) return false;
     t.win?.focus();
     t.el.focus();
@@ -265,15 +279,18 @@
     await sleep(400);
 
     // Step 2: Verify iframe target
-    const t = getIframeTarget();
+    const t = getEditorTarget();
     if (!t) {
-      console.error('👻 Ghost Typer: Cannot find Google Docs iframe!');
+      console.error('👻 Ghost Typer: Cannot find Google Docs editor target!');
       // Log debug info
       const iframes = document.querySelectorAll('iframe');
       console.log('👻 Found', iframes.length, 'iframes:');
       iframes.forEach((f, i) => console.log(`  [${i}]`, f.className || '(no class)', f.src?.substring(0, 50)));
-      
-      window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Cannot find Google Docs editor. Click inside your document and try again.' }, '*');
+
+      const canvasHint = isCanvasDocsLayout()
+        ? ' Google Docs canvas rendering is active and no text input target is exposed.'
+        : '';
+      window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: `Cannot find Google Docs editor.${canvasHint} Click inside your document and try again.` }, '*');
       _state = 'idle';
       return;
     }
