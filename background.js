@@ -65,7 +65,9 @@ let pauseResolve = null;
 let progressCurrent = 0;
 let progressTotal = 0;
 
-const hasDebuggerApi = !!(chrome.debugger && chrome.debugger.attach && chrome.debugger.sendCommand);
+const manifestPermissions = (chrome.runtime.getManifest().permissions || []);
+const hasDebuggerPermission = manifestPermissions.includes('debugger');
+const hasDebuggerApi = hasDebuggerPermission && !!(chrome.debugger && chrome.debugger.attach && chrome.debugger.sendCommand);
 
 // ── Utilities ──
 function gauss(m, s) {

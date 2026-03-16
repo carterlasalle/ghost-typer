@@ -5,8 +5,7 @@
   "description": "Simulate realistic human typing in Google Docs. Paste your text and watch it get typed naturally — with variable speed, typos, corrections, and thinking pauses.",
   "permissions": [
     "activeTab",
-    "storage",
-    "debugger"
+    "storage"
   ],
   "action": {
     "default_popup": "popup.html",
