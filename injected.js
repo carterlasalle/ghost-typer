@@ -59,6 +59,14 @@
     window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
   }
 
+  function getTextRange(el) {
+    const value = typeof el.value === 'string' ? el.value : '';
+    const length = value.length;
+    const start = typeof el.selectionStart === 'number' ? el.selectionStart : length;
+    const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    return { value, start, end };
+  }
+
   // ── Google Docs Interaction ──
   // Strategy: Get the iframe's document, focus the contenteditable,
   // then use execCommand('insertText') which MUST run in main world.
@@ -157,12 +165,11 @@
       console.warn('👻 execCommand(insertText) failed for char:', char, '— trying insertHTML fallback');
       success = !isTextarea && t.doc.execCommand('insertHTML', false, escapeHtmlChar(char));
       if (!success && isTextarea) {
-        const start = typeof t.el.selectionStart === 'number' ? t.el.selectionStart : t.el.value.length;
-        const end = typeof t.el.selectionEnd === 'number' ? t.el.selectionEnd : start;
+        const { value, start, end } = getTextRange(t.el);
         if (typeof t.el.setRangeText === 'function') {
           t.el.setRangeText(char, start, end, 'end');
         } else {
-          t.el.value = t.el.value.slice(0, start) + char + t.el.value.slice(end);
+          t.el.value = value.slice(0, start) + char + value.slice(end);
         }
         t.el.dispatchEvent(new InputEvent('input', {
           bubbles: true,
@@ -196,12 +203,11 @@
     if (!isTextarea) {
       t.doc.execCommand('delete', false, null);
     } else {
-      const start = typeof t.el.selectionStart === 'number' ? t.el.selectionStart : t.el.value.length;
-      const end = typeof t.el.selectionEnd === 'number' ? t.el.selectionEnd : start;
+      const { start, end } = getTextRange(t.el);
       if (start !== end) {
         t.el.setRangeText('', start, end, 'start');
       } else if (start > 0) {
-        t.el.setRangeText('', start - 1, start, 'end');
+        t.el.setRangeText('', start - 1, start, 'start');
       }
       t.el.dispatchEvent(new InputEvent('input', {
         bubbles: true,
