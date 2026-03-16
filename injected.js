@@ -90,9 +90,9 @@
         console.warn('👻 Cannot access iframe contentDocument');
         return null;
       }
-      const el = doc.querySelector('[contenteditable="true"]');
+      const el = doc.querySelector('textarea.docs-texteventtarget, textarea, [contenteditable="true"]');
       if (!el) {
-        console.warn('👻 No contenteditable element inside iframe');
+        console.warn('👻 No text target element inside iframe');
         return null;
       }
       return { doc, el, win: iframe.contentWindow };
@@ -135,6 +135,7 @@
     // Make sure the editable element has focus
     t.win?.focus();
     t.el.focus();
+    const isTextarea = t.el.tagName === 'TEXTAREA';
 
     if (char === '\n') {
       // For Enter, we need to simulate the key event
@@ -144,7 +145,7 @@
         bubbles: true, cancelable: true
       };
       t.el.dispatchEvent(new KeyboardEvent('keydown', enterProps));
-      t.doc.execCommand('insertParagraph', false, null);
+      if (!isTextarea) t.doc.execCommand('insertParagraph', false, null);
       t.el.dispatchEvent(new KeyboardEvent('keyup', enterProps));
       return true;
     }
@@ -154,7 +155,23 @@
     
     if (!success) {
       console.warn('👻 execCommand(insertText) failed for char:', char, '— trying insertHTML fallback');
-      success = t.doc.execCommand('insertHTML', false, escapeHtmlChar(char));
+      success = !isTextarea && t.doc.execCommand('insertHTML', false, escapeHtmlChar(char));
+      if (!success && isTextarea) {
+        const start = typeof t.el.selectionStart === 'number' ? t.el.selectionStart : t.el.value.length;
+        const end = typeof t.el.selectionEnd === 'number' ? t.el.selectionEnd : start;
+        if (typeof t.el.setRangeText === 'function') {
+          t.el.setRangeText(char, start, end, 'end');
+        } else {
+          t.el.value = t.el.value.slice(0, start) + char + t.el.value.slice(end);
+        }
+        t.el.dispatchEvent(new InputEvent('input', {
+          bubbles: true,
+          cancelable: true,
+          data: char,
+          inputType: 'insertText'
+        }));
+        success = true;
+      }
       if (!success) {
         console.error('👻 Both insertText and insertHTML failed for char:', char);
         return false;
@@ -169,13 +186,30 @@
     if (!t) return false;
     t.win?.focus();
     t.el.focus();
+    const isTextarea = t.el.tagName === 'TEXTAREA';
 
     const props = {
       key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8,
       bubbles: true, cancelable: true
     };
     t.el.dispatchEvent(new KeyboardEvent('keydown', props));
-    t.doc.execCommand('delete', false, null);
+    if (!isTextarea) {
+      t.doc.execCommand('delete', false, null);
+    } else {
+      const start = typeof t.el.selectionStart === 'number' ? t.el.selectionStart : t.el.value.length;
+      const end = typeof t.el.selectionEnd === 'number' ? t.el.selectionEnd : start;
+      if (start !== end) {
+        t.el.setRangeText('', start, end, 'start');
+      } else if (start > 0) {
+        t.el.setRangeText('', start - 1, start, 'end');
+      }
+      t.el.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        data: null,
+        inputType: 'deleteContentBackward'
+      }));
+    }
     t.el.dispatchEvent(new KeyboardEvent('keyup', props));
     return true;
   }
@@ -230,15 +264,19 @@
     t.el.focus();
     console.log('👻 Ghost Typer: Editor found, element:', t.el.tagName, 'contentEditable:', t.el.contentEditable);
 
-    // Quick test: try inserting a test character and deleting it
-    const testResult = t.doc.execCommand('insertText', false, '.');
-    console.log('👻 Ghost Typer: execCommand test result:', testResult);
-    if (testResult) {
-      // Delete the test character
-      t.doc.execCommand('delete', false, null);
-      console.log('👻 Ghost Typer: Test passed! execCommand works from main world.');
+    // Quick test: try inserting a test character and deleting it for contenteditable targets
+    if (t.el.tagName !== 'TEXTAREA') {
+      const testResult = t.doc.execCommand('insertText', false, '.');
+      console.log('👻 Ghost Typer: execCommand test result:', testResult);
+      if (testResult) {
+        // Delete the test character
+        t.doc.execCommand('delete', false, null);
+        console.log('👻 Ghost Typer: Test passed! execCommand works from main world.');
+      } else {
+        console.warn('👻 Ghost Typer: execCommand returned false - may not work');
+      }
     } else {
-      console.warn('👻 Ghost Typer: execCommand returned false - may not work');
+      console.log('👻 Ghost Typer: Text target is textarea; using input-event fallback path when needed.');
     }
 
     await sleep(gauss(300, 80));
