@@ -565,10 +565,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
 
     case 'PROGRESS_UPDATE':
-      if (sender?.tab) {
+      if (sender?.tab && (state === 'typing' || state === 'paused' || state === 'done')) {
         progressCurrent = msg.current || 0;
         progressTotal = msg.total || progressTotal;
-        if (state === 'idle') state = 'typing';
       }
       sendResponse({ success: true });
       break;

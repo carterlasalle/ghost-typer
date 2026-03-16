@@ -43,7 +43,7 @@ Ghost Typer is an open-source browser extension that takes your pasted text and 
    **Firefox 148+**
    1. Open `about:debugging#/runtime/this-firefox`
    2. Click **Load Temporary Add-on...**
-   3. Select `/home/runner/work/ghost-typer/ghost-typer/manifest.json`
+   3. Select the `manifest.json` file in your local `ghost-typer` folder
 
 3. The Ghost Typer icon 👻 should appear in your browser toolbar
 
