@@ -46,6 +46,15 @@
     return new Promise(r => { _pauseResolve = r; });
   }
 
+  function escHtml(ch) {
+    if (ch === '&') return '&amp;';
+    if (ch === '<') return '&lt;';
+    if (ch === '>') return '&gt;';
+    if (ch === '"') return '&quot;';
+    if (ch === "'") return '&#39;';
+    return ch;
+  }
+
   // ── Google Docs Interaction ──
   // Strategy: Get the iframe's document, focus the contenteditable,
   // then use execCommand('insertText') which MUST run in main world.
@@ -124,12 +133,8 @@
     const success = t.doc.execCommand('insertText', false, char);
     
     if (!success) {
-      console.warn('👻 execCommand failed for char:', char);
-      
-      // Fallback: try compositionstart → textContent → compositionend
-      t.el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
-      t.el.dispatchEvent(new CompositionEvent('compositionupdate', { data: char, bubbles: true }));
-      t.el.dispatchEvent(new CompositionEvent('compositionend', { data: char, bubbles: true }));
+      console.warn('👻 execCommand(insertText) failed for char:', char, '— trying insertHTML fallback');
+      t.doc.execCommand('insertHTML', false, escHtml(char));
     }
 
     return true;
