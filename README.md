@@ -51,6 +51,7 @@ Ghost Typer is an open-source browser extension that takes your pasted text and 
 
 - **Chrome path:** uses the debugger-driven typing engine for high-fidelity key dispatch.
 - **Firefox 148+ path:** automatically falls back to the content/injected script bridge (`content.js` + `injected.js`) and uses Google Docs-compatible main-world insertion.
+- **Firefox temporary install note:** manifest includes `background.scripts` fallback for environments where `background.service_worker` is disabled.
 - The extension keeps the same popup controls and saved settings in both browsers.
 - No browser switching is required by users — engine selection is automatic at runtime.
 
