@@ -60,9 +60,22 @@
   // then use execCommand('insertText') which MUST run in main world.
 
   function getIframeTarget() {
-    const iframe = document.querySelector('.docs-texteventtarget-iframe');
+    let iframe = document.querySelector('.docs-texteventtarget-iframe');
+    if (!iframe) iframe = document.querySelector('iframe[class*="docs"]');
     if (!iframe) {
-      console.warn('👻 No .docs-texteventtarget-iframe found');
+      const iframes = document.querySelectorAll('iframe');
+      for (const f of iframes) {
+        try {
+          const fd = f.contentDocument || f.contentWindow?.document;
+          if (fd && fd.querySelector('[contenteditable="true"]')) {
+            iframe = f;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+    if (!iframe) {
+      console.warn('👻 No Google Docs text iframe found');
       return null;
     }
     try {
@@ -114,6 +127,7 @@
     if (!t) return false;
 
     // Make sure the editable element has focus
+    t.win?.focus();
     t.el.focus();
 
     if (char === '\n') {
@@ -130,11 +144,15 @@
     }
 
     // The magic line: execCommand in MAIN world context
-    const success = t.doc.execCommand('insertText', false, char);
+    let success = t.doc.execCommand('insertText', false, char);
     
     if (!success) {
       console.warn('👻 execCommand(insertText) failed for char:', char, '— trying insertHTML fallback');
-      t.doc.execCommand('insertHTML', false, escapeHtmlChar(char));
+      success = t.doc.execCommand('insertHTML', false, escapeHtmlChar(char));
+      if (!success) {
+        console.error('👻 Both insertText and insertHTML failed for char:', char);
+        return false;
+      }
     }
 
     return true;
@@ -143,6 +161,7 @@
   function doBackspace() {
     const t = getIframeTarget();
     if (!t) return false;
+    t.win?.focus();
     t.el.focus();
 
     const props = {
@@ -201,6 +220,7 @@
     }
 
     // Step 3: Focus the contenteditable
+    t.win?.focus();
     t.el.focus();
     console.log('👻 Ghost Typer: Editor found, element:', t.el.tagName, 'contentEditable:', t.el.contentEditable);
 
@@ -230,13 +250,21 @@
       const doTypo = _cfg.mistakes > 0 && /[a-zA-Z]/.test(c) && Math.random() < _cfg.mistakes / 100;
 
       if (doTypo) {
-        typeChar(adjKey(c));
+        if (!typeChar(adjKey(c))) {
+          window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
+          _state = 'idle';
+          return;
+        }
         await sleep(Math.max(40, gauss(180, 60)));
         if (_state === 'stopped') break;
 
         const extra = Math.random() < 0.25 ? 1 : 0;
         for (let i = 0; i < extra && _pos + i + 1 < _text.length; i++) {
-          typeChar(_text[_pos + i + 1]);
+          if (!typeChar(_text[_pos + i + 1])) {
+            window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
+            _state = 'idle';
+            return;
+          }
           await sleep(charDelay());
           if (_state === 'stopped') break;
         }
@@ -250,7 +278,11 @@
       }
 
       // Type correct char
-      typeChar(c);
+      if (!typeChar(c)) {
+        window.postMessage({ from: 'ghost-typer', action: 'ERROR', error: 'Unable to type into Google Docs editor. Click in the document and try again.' }, '*');
+        _state = 'idle';
+        return;
+      }
 
       // Delays
       let d = charDelay() + punctDelay(c);
