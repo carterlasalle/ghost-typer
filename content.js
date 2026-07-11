@@ -13,10 +13,24 @@
 (() => {
   'use strict';
 
+  if (window.__ghostTyperContentBridgeLoaded) return;
+  window.__ghostTyperContentBridgeLoaded = true;
+
   // ── Inject the main-world script ──
   const script = document.createElement('script');
   script.src = chrome.runtime.getURL('injected.js');
   script.onload = () => script.remove();
+  script.onerror = () => {
+    console.error('👻 Ghost Typer content bridge failed to load injected.js');
+    try {
+      chrome.runtime.sendMessage({
+        action: 'TYPING_ERROR',
+        error: 'Ghost Typer failed to initialize on this page. Reload Google Docs and try again.'
+      }, () => void chrome.runtime.lastError);
+    } catch (_) {
+      // Ignore messaging errors when the extension context is unavailable.
+    }
+  };
   (document.head || document.documentElement).appendChild(script);
 
   // ── Relay: chrome.runtime → window.postMessage ──
